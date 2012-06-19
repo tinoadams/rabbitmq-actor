@@ -1,11 +1,8 @@
-package utils.mq
-
-import scala.collection.JavaConversions.mapAsJavaMap
+package utils.amqp
 
 import org.slf4j.LoggerFactory
 
 import com.rabbitmq.client.AMQP
-import com.rabbitmq.client.Channel
 import com.rabbitmq.client.Connection
 import com.rabbitmq.client.DefaultConsumer
 import com.rabbitmq.client.Envelope
@@ -13,54 +10,10 @@ import com.rabbitmq.client.ShutdownSignalException
 
 import akka.actor.actorRef2Scala
 import akka.actor.Actor
-import akka.actor.PoisonPill
 import akka.dispatch.Await
 import akka.pattern.ask
 import akka.util.duration.intToDurationInt
 import akka.util.Timeout
-
-trait AmqpDeclaration {
-  def setupChannel(channel: Channel)
-}
-
-case class AmqpExchange(
-  exchangeName: String,
-  exchangeType: String,
-  durable: Boolean = false,
-  autoDelete: Boolean = false,
-  internal: Boolean = false,
-  arguments: Option[Map[String, Object]] = None)
-  extends AmqpDeclaration {
-
-  def setupChannel(channel: Channel) =
-    channel.exchangeDeclare(exchangeName, exchangeType, durable, autoDelete, internal, arguments.map(mapAsJavaMap(_)).getOrElse(null))
-}
-
-case class AmqpQueue(
-  queueName: String,
-  durable: Boolean = false,
-  exclusive: Boolean = false,
-  autoDelete: Boolean = false,
-  arguments: Option[Map[String, Object]] = None)
-  extends AmqpDeclaration {
-
-  def setupChannel(channel: Channel) =
-    channel.queueDeclare(queueName, durable, exclusive, autoDelete, arguments.map(mapAsJavaMap(_)).getOrElse(null))
-}
-
-case class AmqpBinding(
-  exchange: AmqpExchange,
-  queue: AmqpQueue,
-  routingKey: String,
-  arguments: Option[Map[String, Object]] = None)
-  extends AmqpDeclaration {
-
-  def setupChannel(channel: Channel) = {
-    exchange.setupChannel(channel)
-    queue.setupChannel(channel)
-    channel.queueBind(queue.queueName, exchange.exchangeName, routingKey, arguments.map(mapAsJavaMap(_)).getOrElse(null))
-  }
-}
 
 trait RabbitMQSender extends Actor {
   def connection: Connection
@@ -69,10 +22,10 @@ trait RabbitMQSender extends Actor {
   private val logger = LoggerFactory.getLogger(classOf[RabbitMQSender])
 
   logger.debug("Creating new RabbitMQSender channel: {}", self.path.toString)
-  val channel = connection.createChannel
+  private val channel = connection.createChannel
 
   // her we either declare an exchange OR an exchange, queue and binding
-  val (exchange, declaration) = binding.fold(exchange => (exchange, exchange), binding => (binding.exchange, binding))
+  private val (exchange, declaration) = binding.fold(exchange => (exchange, exchange), binding => (binding.exchange, binding))
   logger.debug("Event sender declaring: {}", declaration)
   declaration.setupChannel(channel)
 
@@ -125,15 +78,15 @@ trait RabbitMQReceiver extends Actor {
   private val logger = LoggerFactory.getLogger(classOf[RabbitMQReceiver])
 
   logger.debug("Creating new RabbitMQReceiver channel: {}", self.path.toString)
-  val channel = connection.createChannel
+  private val channel = connection.createChannel
 
   // her we either declare a queue OR an exchange, queue and binding
-  val (queue, declaration) = binding.fold(queue => (queue, queue), binding => (binding.queue, binding))
+  private val (queue, declaration) = binding.fold(queue => (queue, queue), binding => (binding.queue, binding))
   logger.debug("Event receiver declaring: {}", declaration)
   declaration.setupChannel(channel)
 
   // create a consumer which synchronously sends incoming messages to the actor 
-  val actorConsumer = new DefaultConsumer(channel) {
+  private val actorConsumer = new DefaultConsumer(channel) {
 
     override def handleDelivery(
       consumerTag: String,
@@ -143,17 +96,17 @@ trait RabbitMQReceiver extends Actor {
       logger.trace("Received message from queue: {}", queue.queueName)
 
       // send all msgs to the event handler and wait for a confirmation, blocking
-      val result: ConfirmationResponse = {
+      val result = {
         try {
           val message = new IncomingMessage(consumerTag, envelope, properties, body)
           // actor can die whilst we are waiting which means the channel will be closed...
           val reply = ask(self, message)(messageHandlingTimeout)
-          Await.result(reply, messageHandlingTimeout.duration).asInstanceOf[ConfirmationResponse]
+          Await.result(reply, messageHandlingTimeout.duration)
         }
         catch {
           case e =>
             logger.error("Error occured during message delivery, requeueing message", e)
-            new Reject(true)
+            new Reject(false)
         }
       }
       // since we were waiting for the result we need to check if this actor has been terminated and the channel is closed
@@ -172,6 +125,9 @@ trait RabbitMQReceiver extends Actor {
             channel.basicReject(envelope.getDeliveryTag(), requeue)
           case Accept =>
             logger.trace("Message has been accepted by recipient: {}", envelope.getDeliveryTag())
+          case msg =>
+            logger.trace("Actor response {} for message {} is unknown, dropping message", msg, envelope.getDeliveryTag())
+            channel.basicReject(envelope.getDeliveryTag(), false)
         }
       }
       // connection must be gone
