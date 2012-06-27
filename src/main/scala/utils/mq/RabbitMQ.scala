@@ -66,7 +66,7 @@ trait RabbitMQSender extends Actor {
   def connection: Connection
   def binding: Either[AmqpExchange, AmqpBinding]
 
-  val logger = LoggerFactory.getLogger(classOf[RabbitMQSender])
+  private val logger = LoggerFactory.getLogger(classOf[RabbitMQSender])
 
   logger.debug("Creating new RabbitMQSender channel: {}", self.path.toString)
   val channel = connection.createChannel
@@ -76,7 +76,7 @@ trait RabbitMQSender extends Actor {
   logger.debug("Event sender declaring: {}", declaration)
   declaration.setupChannel(channel)
 
-  protected def publishEvent(
+  protected def sendMessage(
     body: Array[Byte],
     routingKey: String,
     mandatory: Boolean = false,
@@ -122,7 +122,7 @@ trait RabbitMQReceiver extends Actor {
   case class Reject(requeue: Boolean = false) extends ConfirmationResponse
   case object Accept extends ConfirmationResponse
 
-  val logger = LoggerFactory.getLogger(classOf[RabbitMQReceiver])
+  private val logger = LoggerFactory.getLogger(classOf[RabbitMQReceiver])
 
   logger.debug("Creating new RabbitMQReceiver channel: {}", self.path.toString)
   val channel = connection.createChannel
