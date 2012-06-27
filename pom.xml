@@ -2,7 +2,7 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>au.com.rawideas</groupId>
+	<groupId>com.rawideas</groupId>
 	<artifactId>rabbitmq-actor</artifactId>
 	<version>1.0</version>
 	<packaging>jar</packaging>
@@ -15,6 +15,14 @@
 		<maven.compiler.source>1.6</maven.compiler.source>
 		<maven.compiler.target>1.6</maven.compiler.target>
 	</properties>
+
+	<distributionManagement>
+		<repository>
+			<id>ri-repo</id>
+			<name>RawIdeas Repository</name>
+			<url>scp://repository.rawideas.com:222/virt/domains/repository.rawideas.com/htdocs/maven2</url>
+		</repository>
+	</distributionManagement>
 
 	<repositories>
 		<repository>
@@ -94,5 +102,17 @@
 				</executions>
 			</plugin>
 		</plugins>
+		<extensions>
+			<extension>
+				<groupId>org.apache.maven.wagon</groupId>
+				<artifactId>wagon-ssh-external</artifactId>
+				<version>1.0-alpha-6</version>
+			</extension>
+			<extension>
+				<groupId>org.apache.maven.wagon</groupId>
+				<artifactId>wagon-ssh</artifactId>
+				<version>2.2</version>
+			</extension>
+		</extensions>
 	</build>
 </project>
