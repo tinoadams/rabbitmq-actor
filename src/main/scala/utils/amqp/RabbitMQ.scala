@@ -106,7 +106,7 @@ trait RabbitMQReceiver extends Actor {
         catch {
           case e =>
             logger.error("Error occured during message delivery, requeueing message", e)
-            new Reject(false)
+            new Reject(true)
         }
       }
       // since we were waiting for the result we need to check if this actor has been terminated and the channel is closed
